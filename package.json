@@ -1,0 +1,150 @@
+{
+    "name": "cursor-branch-chats",
+    "displayName": "Branch Chats",
+    "version": "0.2.0",
+    "description": "Index Cursor agent conversations by the git branch you were on when you started them.",
+    "categories": [
+        "Other",
+        "SCM Providers"
+    ],
+    "publisher": "raggi",
+    "main": "./out/extension.js",
+    "scripts": {
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "vscode:prepublish": "npm run compile"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/vscode": "^1.85.0",
+        "typescript": "^5.4.0"
+    },
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "branchChats",
+                    "title": "Branch Chats",
+                    "icon": "media/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "branchChats": [
+                {
+                    "id": "branchChats.view",
+                    "name": "Conversations by Branch"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "branchChats.refresh",
+                "title": "Branch Chats: Refresh",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "branchChats.open",
+                "title": "Branch Chats: Open Conversation"
+            },
+            {
+                "command": "branchChats.revealTranscript",
+                "title": "Branch Chats: Reveal Transcript File",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "branchChats.linkCurrentChat",
+                "title": "Branch Chats: Link Current Chat to Current Branch",
+                "icon": "$(link)"
+            },
+            {
+                "command": "branchChats.linkHere",
+                "title": "Branch Chats: Link Current Chat Here",
+                "icon": "$(add)"
+            },
+            {
+                "command": "branchChats.linkConversation",
+                "title": "Branch Chats: Link Conversation to Branch…",
+                "icon": "$(link)"
+            },
+            {
+                "command": "branchChats.unlinkConversation",
+                "title": "Branch Chats: Unlink Conversation",
+                "icon": "$(circle-slash)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "branchChats.refresh",
+                    "when": "view == branchChats.view",
+                    "group": "navigation@1"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "branchChats.linkHere",
+                    "when": "view == branchChats.view && viewItem == branch",
+                    "group": "inline"
+                },
+                {
+                    "command": "branchChats.revealTranscript",
+                    "when": "view == branchChats.view && (viewItem == conversation || viewItem == conversation-unlinked)",
+                    "group": "inline"
+                },
+                {
+                    "command": "branchChats.linkConversation",
+                    "when": "view == branchChats.view && viewItem == conversation-unlinked",
+                    "group": "inline"
+                },
+                {
+                    "command": "branchChats.linkConversation",
+                    "when": "view == branchChats.view && (viewItem == conversation || viewItem == conversation-unlinked)",
+                    "group": "1_link@1"
+                },
+                {
+                    "command": "branchChats.unlinkConversation",
+                    "when": "view == branchChats.view && viewItem == conversation",
+                    "group": "1_link@2"
+                },
+                {
+                    "command": "branchChats.revealTranscript",
+                    "when": "view == branchChats.view && (viewItem == conversation || viewItem == conversation-unlinked)",
+                    "group": "2_view@1"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Branch Chats",
+            "properties": {
+                "branchChats.preferDeepLink": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Try to open the real Cursor chat pane for a conversation before falling back to a rendered transcript view."
+                },
+                "branchChats.ignoredBranches": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "main",
+                        "master"
+                    ],
+                    "description": "Branches to ignore: conversations started on these branches are not auto-captured, and these branch groups are hidden (unless it is your current branch)."
+                },
+                "branchChats.showUnlinked": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show an 'Unlinked' group containing conversations that are not linked to any branch (so you can manually link them)."
+                }
+            }
+        }
+    },
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "engines": {
+        "vscode": "^1.85.0"
+    }
+}
