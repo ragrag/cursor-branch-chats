@@ -190,6 +190,27 @@ export class BranchLedger {
         return true;
     }
 
+    /** Remove a branch from every conversation. Returns the number of links removed. */
+    deleteBranch(branch: string): number {
+        let removed = 0;
+        for (const [id, entry] of Object.entries(this.data.entries)) {
+            const next = entry.links.filter(l => l.branch !== branch);
+            if (next.length === entry.links.length) {
+                continue;
+            }
+            removed += entry.links.length - next.length;
+            if (next.length === 0) {
+                delete this.data.entries[id];
+            } else {
+                entry.links = next;
+            }
+        }
+        if (removed > 0) {
+            this.persist();
+        }
+        return removed;
+    }
+
     /** Remove a conversation from every branch. */
     unlinkAll(conversationId: string): boolean {
         if (!this.data.entries[conversationId]) {

@@ -1,7 +1,7 @@
 {
     "name": "cursor-branch-chats",
     "displayName": "Branch Chats",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "Index Cursor agent conversations by the git branch you were on when you started them.",
     "categories": [
         "AI",
@@ -98,6 +98,11 @@
                 "command": "branchChats.unlinkConversation",
                 "title": "Branch Chats: Remove Conversation from Branch",
                 "icon": "$(close)"
+            },
+            {
+                "command": "branchChats.deleteBranch",
+                "title": "Branch Chats: Remove Branch Group",
+                "icon": "$(trash)"
             }
         ],
         "menus": {
@@ -112,7 +117,12 @@
                 {
                     "command": "branchChats.linkHere",
                     "when": "view == branchChats.view && viewItem == branch",
-                    "group": "inline"
+                    "group": "inline@1"
+                },
+                {
+                    "command": "branchChats.deleteBranch",
+                    "when": "view == branchChats.view && viewItem == branch",
+                    "group": "inline@2"
                 },
                 {
                     "command": "branchChats.revealTranscript",

@@ -63,6 +63,8 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
         private readonly ledger: BranchLedger,
         private readonly getCurrentBranch: () => string | undefined,
         private readonly loadHeaders: () => Promise<Map<string, ComposerHeader>>,
+        /** Local branches that currently exist; groups for deleted branches are hidden. */
+        private readonly getExistingBranches: () => Set<string>,
     ) {}
 
     refresh(): void {
@@ -138,8 +140,14 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
         const current = this.getCurrentBranch();
         const ignored = new Set(ignoredBranches);
 
+        const existing = this.getExistingBranches();
         const branches = [...this.cache.keys()].filter(key => {
             if (key === UNLINKED_GROUP) {
+                return false;
+            }
+            // Hide groups for branches that no longer exist in git (deleted),
+            // except the branch you're currently on.
+            if (key !== current && existing.size > 0 && !existing.has(key)) {
                 return false;
             }
             // Always show the branch you're currently on, even if it's "ignored".
@@ -196,8 +204,8 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
             const node = new TreeNode('conversation', item.name, vscode.TreeItemCollapsibleState.None, item.conv, item.branch ?? undefined, item.origin);
             node.description = relativeTime(item.lastActivity);
             node.contextValue = isUnlinked ? 'conversation-unlinked' : 'conversation';
-            // Linked conversations (auto or manual) all use the same link icon.
-            node.iconPath = new vscode.ThemeIcon(isUnlinked ? 'comment-discussion' : 'link', isUnlinked ? undefined : new vscode.ThemeColor('charts.blue'));
+            // All conversations use the regular chat icon, regardless of link origin.
+            node.iconPath = new vscode.ThemeIcon('comment-discussion');
 
             const tooltip = new vscode.MarkdownString();
             tooltip.appendMarkdown(`**${escapeMd(item.name)}**\n\n`);

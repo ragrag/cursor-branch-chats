@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ComposerHeader, getActiveComposerIds, getGlobalComposerHeaders } from './composer';
-import { BranchTracker } from './git';
+import { BranchTracker, listLocalBranches } from './git';
 import { BranchLedger } from './ledger';
 import { openConversation } from './open';
 import { BranchChatsProvider, TreeNode } from './tree';
@@ -49,7 +49,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         headerCacheAt = 0;
     };
 
-    const provider = new BranchChatsProvider(transcriptsDir, ledger, () => tracker.branch, loadHeaders);
+    // Branch existence is computed lazily on each tree render (one cheap refs walk),
+    // not via a dedicated filesystem watcher.
+    const provider = new BranchChatsProvider(
+        transcriptsDir,
+        ledger,
+        () => tracker.branch,
+        loadHeaders,
+        () => listLocalBranches(workspaceRoot),
+    );
     const view = vscode.window.createTreeView('branchChats.view', { treeDataProvider: provider });
     context.subscriptions.push(view);
 
@@ -202,6 +210,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refresh();
                 vscode.window.showInformationMessage(`Branch Chats: removed conversation from ${branch}.`);
             }
+        }),
+
+        vscode.commands.registerCommand('branchChats.deleteBranch', async (node: TreeNode | undefined) => {
+            const branch = node?.branchName;
+            if (!branch) {
+                return;
+            }
+            const linkCount = Object.values(ledger.all()).filter(e => e.links.some(l => l.branch === branch)).length;
+            const detail =
+                linkCount > 0
+                    ? `This removes the "${branch}" group and unlinks ${linkCount} conversation(s) from it. The conversations and the git branch are not deleted.`
+                    : `This removes the empty "${branch}" group.`;
+            const confirm = await vscode.window.showWarningMessage(`Remove branch group "${branch}"?`, { modal: true, detail }, 'Remove');
+            if (confirm !== 'Remove') {
+                return;
+            }
+            const removed = ledger.deleteBranch(branch);
+            output.appendLine(`Deleted branch group ${branch} (${removed} link(s) removed)`);
+            refresh();
+            vscode.window.showInformationMessage(`Branch Chats: removed branch group "${branch}".`);
         }),
     );
 
