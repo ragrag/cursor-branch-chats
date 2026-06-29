@@ -102,22 +102,29 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
         const map = new Map<string, EnrichedConversation[]>();
 
         for (const conv of conversations) {
-            const entry = this.ledger.get(conv.id);
             const header = headers.get(conv.id);
-            const branch = entry?.branch ?? null;
-            const enriched: EnrichedConversation = {
+            const links = this.ledger.branches(conv.id);
+            const common = {
                 conv,
-                branch,
-                origin: entry?.origin ?? null,
                 name: header?.name?.trim() || conv.title,
                 startedAt: header?.createdAt ?? conv.startedAt,
                 lastActivity: header?.lastUpdatedAt ?? conv.updatedAt ?? conv.startedAt,
                 subtitle: header?.subtitle,
             };
-            const key = branch ?? UNLINKED_GROUP;
-            const bucket = map.get(key) ?? [];
-            bucket.push(enriched);
-            map.set(key, bucket);
+
+            if (links.length === 0) {
+                const bucket = map.get(UNLINKED_GROUP) ?? [];
+                bucket.push({ ...common, branch: null, origin: null });
+                map.set(UNLINKED_GROUP, bucket);
+                continue;
+            }
+
+            // A conversation appears under each branch it is linked to.
+            for (const link of links) {
+                const bucket = map.get(link.branch) ?? [];
+                bucket.push({ ...common, branch: link.branch, origin: link.origin });
+                map.set(link.branch, bucket);
+            }
         }
 
         for (const bucket of map.values()) {
@@ -139,6 +146,12 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
             return key === current || !ignored.has(key);
         });
 
+        // Always surface the current branch, even when it has no conversations yet,
+        // so the user can still manually link a chat to it.
+        if (current && !branches.includes(current)) {
+            branches.push(current);
+        }
+
         branches.sort((a, b) => {
             if (a === current) return -1;
             if (b === current) return 1;
@@ -148,7 +161,7 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
         });
 
         const nodes = branches.map(branch => {
-            const count = this.cache.get(branch)!.length;
+            const count = this.cache.get(branch)?.length ?? 0;
             const isCurrent = branch === current;
             const node = new TreeNode(
                 'branch',
@@ -183,10 +196,8 @@ export class BranchChatsProvider implements vscode.TreeDataProvider<TreeNode> {
             const node = new TreeNode('conversation', item.name, vscode.TreeItemCollapsibleState.None, item.conv, item.branch ?? undefined, item.origin);
             node.description = relativeTime(item.lastActivity);
             node.contextValue = isUnlinked ? 'conversation-unlinked' : 'conversation';
-            node.iconPath = new vscode.ThemeIcon(
-                isUnlinked ? 'comment-discussion' : isManual ? 'link' : 'comment-discussion',
-                isManual ? new vscode.ThemeColor('charts.blue') : undefined,
-            );
+            // Linked conversations (auto or manual) all use the same link icon.
+            node.iconPath = new vscode.ThemeIcon(isUnlinked ? 'comment-discussion' : 'link', isUnlinked ? undefined : new vscode.ThemeColor('charts.blue'));
 
             const tooltip = new vscode.MarkdownString();
             tooltip.appendMarkdown(`**${escapeMd(item.name)}**\n\n`);

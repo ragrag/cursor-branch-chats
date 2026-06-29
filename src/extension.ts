@@ -77,13 +77,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const handleChange = (uri: vscode.Uri) => {
         const convId = conversationIdFromPath(transcriptsDir, uri.fsPath);
-        if (!convId || ledger.has(convId)) {
+        if (!convId) {
             return;
         }
         const branch = tracker.branch;
         if (!branch || ignoredBranches().has(branch)) {
             return;
         }
+        // Additive: a conversation accumulates every branch it is actively worked on.
+        // capture() dedupes per-branch, so this is a no-op once this branch is linked.
         if (ledger.capture(convId, branch)) {
             output.appendLine(`Captured ${convId} -> ${branch}`);
             refresh();
@@ -165,14 +167,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!conv) {
                 return;
             }
-            const branch = await pickBranch(ledger, tracker.branch, ledger.get(conv.id)?.branch);
+            const linked = new Set(ledger.branches(conv.id).map(l => l.branch));
+            const branch = await pickBranch(ledger, tracker.branch, linked);
             if (!branch) {
                 return;
             }
-            ledger.link(conv.id, branch);
+            const added = ledger.link(conv.id, branch);
             output.appendLine(`Linked (manual) ${conv.id} -> ${branch}`);
             refresh();
-            vscode.window.showInformationMessage(`Branch Chats: linked conversation to ${branch}.`);
+            vscode.window.showInformationMessage(
+                added ? `Branch Chats: linked conversation to ${branch}.` : `Branch Chats: conversation already linked to ${branch}.`,
+            );
         }),
 
         vscode.commands.registerCommand('branchChats.unlinkConversation', async (node: TreeNode | undefined) => {
@@ -180,10 +185,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!conv) {
                 return;
             }
-            if (ledger.unlink(conv.id)) {
-                output.appendLine(`Unlinked ${conv.id}`);
+            const linked = ledger.branches(conv.id).map(l => l.branch);
+            if (linked.length === 0) {
+                return;
+            }
+            // Prefer the branch group the item was invoked from; otherwise ask which to remove.
+            let branch = node?.branchName;
+            if (!branch) {
+                branch = linked.length === 1 ? linked[0] : await pickBranchToRemove(linked);
+            }
+            if (!branch) {
+                return;
+            }
+            if (ledger.unlink(conv.id, branch)) {
+                output.appendLine(`Unlinked ${conv.id} from ${branch}`);
                 refresh();
-                vscode.window.showInformationMessage('Branch Chats: conversation unlinked.');
+                vscode.window.showInformationMessage(`Branch Chats: removed conversation from ${branch}.`);
             }
         }),
     );
@@ -206,11 +223,11 @@ async function pickConversation(
 
     type Item = vscode.QuickPickItem & { conv: Conversation };
     const items: Item[] = ordered.map(conv => {
-        const entry = ledger.get(conv.id);
+        const links = ledger.branches(conv.id);
         const name = headers.get(conv.id)?.name?.trim() || conv.title;
         return {
             label: name,
-            description: entry ? `linked: ${entry.branch}` : 'unlinked',
+            description: links.length ? `linked: ${links.map(l => l.branch).join(', ')}` : 'unlinked',
             detail: `#${conv.id.slice(0, 8)}`,
             conv,
         };
@@ -223,13 +240,15 @@ async function pickConversation(
     return picked?.conv;
 }
 
-async function pickBranch(ledger: BranchLedger, currentBranch: string | undefined, existing: string | undefined): Promise<string | undefined> {
+async function pickBranch(ledger: BranchLedger, currentBranch: string | undefined, linkedBranches: Set<string>): Promise<string | undefined> {
     const known = new Set<string>();
     if (currentBranch) {
         known.add(currentBranch);
     }
     for (const entry of Object.values(ledger.all())) {
-        known.add(entry.branch);
+        for (const link of entry.links) {
+            known.add(link.branch);
+        }
     }
     const ordered = [...known].sort((a, b) => {
         if (a === currentBranch) return -1;
@@ -237,10 +256,18 @@ async function pickBranch(ledger: BranchLedger, currentBranch: string | undefine
         return a.localeCompare(b);
     });
 
-    const items: vscode.QuickPickItem[] = ordered.map(branch => ({
-        label: branch,
-        description: branch === currentBranch ? 'current' : branch === existing ? 'currently linked' : undefined,
-    }));
+    const describe = (branch: string): string | undefined => {
+        const tags: string[] = [];
+        if (branch === currentBranch) {
+            tags.push('current');
+        }
+        if (linkedBranches.has(branch)) {
+            tags.push('already linked');
+        }
+        return tags.length ? tags.join(' · ') : undefined;
+    };
+
+    const items: vscode.QuickPickItem[] = ordered.map(branch => ({ label: branch, description: describe(branch) }));
     items.push({ label: ENTER_BRANCH_ITEM });
 
     const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Link to which branch?' });
@@ -250,12 +277,21 @@ async function pickBranch(ledger: BranchLedger, currentBranch: string | undefine
     if (picked.label === ENTER_BRANCH_ITEM) {
         const entered = await vscode.window.showInputBox({
             prompt: 'Branch name',
-            value: existing ?? currentBranch ?? '',
+            value: currentBranch ?? '',
             validateInput: value => (value.trim() ? null : 'Branch name is required'),
         });
         return entered?.trim() || undefined;
     }
     return picked.label;
+}
+
+/** Ask which of a conversation's linked branches to remove it from. */
+async function pickBranchToRemove(linked: string[]): Promise<string | undefined> {
+    const picked = await vscode.window.showQuickPick(
+        linked.map(branch => ({ label: branch })),
+        { placeHolder: 'Remove this conversation from which branch?' },
+    );
+    return picked?.label;
 }
 
 export function deactivate(): void {
